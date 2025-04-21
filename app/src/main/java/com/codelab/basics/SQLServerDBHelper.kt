@@ -10,11 +10,11 @@ import java.util.concurrent.Executors
 
 class SQLServerDBHelper {
     // SQL Server connection details
-    private val ip = "localhost"  // Update with my IP
+    private val ip = "10.0.2.2"  // Update with my IP
     private val port = "1433"  // SQL Server port
     private val dbName = "GroceryInventoryDB"
     private val username = "BDFulton"
-    private val password = "Everest69$"
+    private val password = "Everest69"
 
     private val connectionString = "jdbc:jtds:sqlserver://$ip:$port/$dbName;user=$username;password=$password;"
 
@@ -120,6 +120,27 @@ class SQLServerDBHelper {
                 connection?.close()
             } catch (e: SQLException) {
                 Log.e("SQLServerDBHelper", "Insert Error: ${e.message}")
+            }
+        }
+    }
+
+    // Check connection to DB
+    fun testConnection(onResult: (Boolean) -> Unit) {
+        val executor = Executors.newSingleThreadExecutor()
+        executor.execute {
+            try {
+                val conn = getConnection()
+                if (conn != null && !conn.isClosed) {
+                    Log.d("SQLServerDBHelper", "✅ Connected to SQL Server successfully!")
+                    conn.close()
+                    onResult(true)
+                } else {
+                    Log.e("SQLServerDBHelper", "❌ Connection failed.")
+                    onResult(false)
+                }
+            } catch (e: SQLException) {
+                Log.e("SQLServerDBHelper", "❌ Connection error: ${e.message}")
+                onResult(false)
             }
         }
     }

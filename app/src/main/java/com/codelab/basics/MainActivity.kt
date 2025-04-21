@@ -4,6 +4,8 @@ package com.codelab.basics
 import android.annotation.SuppressLint
 import android.database.Cursor
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -107,6 +109,8 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun ProductListScreen(onProductClick: (Map<String, Any>) -> Unit, onAddProductClick: () -> Unit, onSearchProductClick: () -> Unit, onScanOutProductClick: () -> Unit) {
         val productList = getProductList()
+        val context = LocalContext.current
+        val db = SQLServerDBHelper()
         Scaffold(
             floatingActionButton = {
                 Column {
@@ -121,6 +125,15 @@ class MainActivity : ComponentActivity() {
                     FloatingActionButton(onClick = onScanOutProductClick) {
                         Text("📦")
                     }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    FloatingActionButton(onClick = {
+                        db.testConnection { isConnected ->
+                            val message = if (isConnected) "✅ Connected to SQL Server" else "❌ Could not connect to SQL Server"
+                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                        }
+                    }) {
+                        Text("🧪")
+                    }
                 }
             }
         ) {
@@ -129,6 +142,9 @@ class MainActivity : ComponentActivity() {
                 Spacer(modifier = Modifier.height(16.dp))
                 LazyColumn {
                     items(productList) { product ->
+                        val name = product["ProductName"] as? String ?: "Unnamed"
+                        val stock = product["Quantity"]?.toString() ?: "0"
+
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -137,12 +153,12 @@ class MainActivity : ComponentActivity() {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = product["name"] as String,
+                                text = name,
                                 style = MaterialTheme.typography.bodyLarge,
                                 modifier = Modifier.weight(1f)
                             )
                             Text(
-                                text = "Stock: ${product["quantity"]}",
+                                text = "Stock: $stock",
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
@@ -153,9 +169,17 @@ class MainActivity : ComponentActivity() {
     }
     @Composable
     fun ProductDetailsScreen(product: Map<String, Any>, onBack: () -> Unit) {
-        var updatedQuantity by remember { mutableStateOf(product["quantity"] as Int) }
         val context = LocalContext.current
         val db = SQLServerDBHelper()
+
+        val name = product["ProductName"] as? String ?: "Unnamed"
+        val sku = product["SKU"] as? String ?: "Unknown"
+        val category = product["Category"] as? String ?: "Misc"
+        val quantity = (product["Quantity"] as? Int) ?: 0
+        val price = (product["Price"] as? Double) ?: 0.0
+        val supplier = product["Supplier"] as? String ?: "Unlisted"
+
+        var quantityChange by remember { mutableStateOf(TextFieldValue("1")) }
 
         Column(
             modifier = Modifier
@@ -164,61 +188,74 @@ class MainActivity : ComponentActivity() {
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             Column {
-                Text(text = product["name"] as String, style = MaterialTheme.typography.headlineLarge)
-                Text(text = "SKU: ${product["sku"]}", style = MaterialTheme.typography.bodyMedium)
-                Text(text = "Category: ${product["category"]}", style = MaterialTheme.typography.bodyMedium)
-                Text(text = "Supplier: ${product["supplier"]}", style = MaterialTheme.typography.bodyMedium)
+                Text(text = "Product Details", style = MaterialTheme.typography.headlineLarge)
                 Spacer(modifier = Modifier.height(16.dp))
 
-                Text(text = "Stock Quantity:", style = MaterialTheme.typography.bodyLarge)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Button(onClick = { if (updatedQuantity > 0) updatedQuantity-- }) {
-                        Text("-")
-                    }
-                    Text(
-                        text = updatedQuantity.toString(),
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                    Button(onClick = { updatedQuantity++ }) {
-                        Text("+")
-                    }
-                }
+                Text(text = "Name: $name", style = MaterialTheme.typography.bodyLarge)
+                Text(text = "SKU: $sku", style = MaterialTheme.typography.bodyLarge)
+                Text(text = "Category: $category", style = MaterialTheme.typography.bodyLarge)
+                Text(text = "Quantity: $quantity", style = MaterialTheme.typography.bodyLarge)
+                Text(text = "Price: $${"%.2f".format(price)}", style = MaterialTheme.typography.bodyLarge)
+                Text(text = "Supplier: $supplier", style = MaterialTheme.typography.bodyLarge)
 
                 Spacer(modifier = Modifier.height(16.dp))
-                Text(text = "Price: $${product["price"]}", style = MaterialTheme.typography.bodyLarge)
+
+                OutlinedTextField(
+                    value = quantityChange,
+                    onValueChange = { quantityChange = it },
+                    label = { Text("Amount to Adjust") },
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
 
-            // Buttons for Update & Delete
             Column {
                 Button(
                     onClick = {
-                        db.updateProductStock(product["sku"] as String, updatedQuantity)
-                        Toast.makeText(context, "Stock updated!", Toast.LENGTH_SHORT).show()
+                        val change = quantityChange.text.toIntOrNull() ?: 1
+                        val newQuantity = quantity + change
+                        db.updateProductStock(sku, newQuantity)
+                        Toast.makeText(context, "Quantity increased by $change", Toast.LENGTH_SHORT).show()
                         onBack()
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(text = "Update Stock")
+                    Text(text = "Increase Stock")
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Button(
                     onClick = {
-                        db.deleteProduct(product["sku"] as String)
-                        Toast.makeText(context, "Product deleted!", Toast.LENGTH_SHORT).show()
+                        val change = quantityChange.text.toIntOrNull() ?: 1
+                        val newQuantity = quantity - change
+                        db.updateProductStock(sku, newQuantity)
+                        Toast.makeText(context, "Quantity reduced by $change", Toast.LENGTH_SHORT).show()
                         onBack()
                     },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(text = "Reduce Stock")
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Button(
+                    onClick = {
+                        db.deleteProduct(sku)
+                        Toast.makeText(context, "Product deleted", Toast.LENGTH_SHORT).show()
+                        onBack()
+                    },
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(text = "Delete Product")
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
-                Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = onBack,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Text(text = "Back")
                 }
             }
@@ -352,7 +389,7 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     fun ScanOutProductScreen(onBack: () -> Unit) {
-        var scannedProducts by remember { mutableStateOf(mutableListOf<Map<String, Any>>()) }
+        var scannedProducts by remember { mutableStateOf(listOf<Map<String, Any>>()) }
         var scanQuery by remember { mutableStateOf(TextFieldValue("")) }
         val context = LocalContext.current
         val db = SQLServerDBHelper()
@@ -388,11 +425,15 @@ class MainActivity : ComponentActivity() {
                                     "Quantity" to resultSet.getInt("Quantity"),
                                     "UPC" to resultSet.getString("SKU")
                                 )
-                                scannedProducts.add(product)
+                                Handler(Looper.getMainLooper()).post {
+                                    scannedProducts = scannedProducts.toMutableList().apply { add(product) }
+                                }
+                            } else {
+                                Log.e("ScanOut", "No product found with SKU: ${scanQuery.text}")
                             }
                             connection?.close()
                         } catch (e: Exception) {
-                            Log.e("ScanOutProductScreen", "SQL Error: ${e.message}")
+                            Log.e("ScanOut", "Error: ${e.message}")
                         }
                     }
                 },
@@ -405,7 +446,9 @@ class MainActivity : ComponentActivity() {
 
             Text(text = "Scanned Products:", style = MaterialTheme.typography.bodyLarge)
             scannedProducts.forEach { product ->
-                Text(text = "${product["ProductName"]} - ${product["SKU"]}", style = MaterialTheme.typography.bodyMedium)
+                val name = product["ProductName"] as? String ?: "Unknown"
+                val sku = product["SKU"] as? String ?: "-"
+                Text(text = "$name - $sku", style = MaterialTheme.typography.bodyMedium)
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -423,7 +466,9 @@ class MainActivity : ComponentActivity() {
                                 preparedStatement?.executeUpdate()
                             }
                             connection?.close()
-                            scannedProducts.clear()
+                            Handler(Looper.getMainLooper()).post {
+                                scannedProducts = listOf()
+                            }
                         } catch (e: Exception) {
                             Log.e("ScanOutProductScreen", "Update Error: ${e.message}")
                         }
@@ -441,6 +486,7 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
 
 
 
